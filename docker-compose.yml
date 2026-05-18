@@ -1,0 +1,131 @@
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - inveniq_backend
+
+  # Django Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    volumes:
+      - .:/app
+      - /app/.venv
+      - /app/htmlcov
+      - /app/.pytest_cache
+      - /app/.coverage_data
+      - static_volume:/app/staticfiles
+      - data_volume:/app/data
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/db.sqlite3}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - inveniq_backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+  # Huey Task Queue Worker
+  huey:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python manage.py run_huey
+    volumes:
+      - .:/app
+      - /app/.venv
+      - /app/.pytest_cache
+      - /app/.coverage_data
+      - data_volume:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/db.sqlite3}
+    healthcheck:
+      disable: true
+    depends_on:
+      - web
+    networks:
+      - inveniq_backend
+    restart: unless-stopped
+
+  # Nginx (Static/Media file serving)
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1337:80"
+    volumes:
+      - media_volume:/app/media
+      - ./.nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - inveniq_backend
+
+  # Test Service
+  test:
+    profiles:
+      - test
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    volumes:
+      - .:/app
+      - /app/.venv
+      - /app/htmlcov
+      - /app/.pytest_cache
+      - /app/.coverage_data
+      - data_volume:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/db.sqlite3}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - inveniq_backend
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  data_volume:
+
+networks:
+  inveniq_backend:
+    driver: bridge

@@ -9,8 +9,8 @@ from rest_framework.views import APIView
 from alerts.models import Alert
 from sales.models import Sale, SaleItem
 
-from .models import AiInsight, Branch, Product, Stock
-from .models_ai import StockPrediction
+from .models import Branch, Product, Stock
+from .models_ai import AiInsight, StockPrediction
 
 
 class StockDepletionForecastView(APIView):
@@ -363,7 +363,8 @@ class StockHistoryView(APIView):
             or 0
         )
 
-        # Get all StockEntry changes in the last 30 days (newest first so we can walk backwards)
+        # Get all StockEntry changes in the last 30 days
+        # (newest first so we can walk backwards)
         entries = list(
             product.entries.filter(created_at__gte=start_date)
             .order_by("created_at")

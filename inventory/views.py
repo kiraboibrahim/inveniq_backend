@@ -9,7 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
-from accounts.permissions import IsAdminOrReadOnly, IsManager, IsManagerOrReadOnly
+from accounts.permissions import IsManager, IsManagerOrReadOnly
 
 from .models import Branch, Category, Product, PurchaseOrder, Stock, StockEntry
 from .serializers import (
@@ -25,7 +25,7 @@ from .serializers import (
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
     serializer_class = BranchSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsManagerOrReadOnly]
     pagination_class = None
 
 
@@ -72,7 +72,10 @@ class ProductViewSet(viewsets.ModelViewSet):
             process_excel_import(file_bytes, branch_id)
             return Response(
                 {
-                    "message": "Excel import started in the background. Products will appear shortly."
+                    "message": (
+                        "Excel import started in the background. "
+                        "Products will appear shortly."
+                    )
                 },
                 status=status.HTTP_202_ACCEPTED,
             )

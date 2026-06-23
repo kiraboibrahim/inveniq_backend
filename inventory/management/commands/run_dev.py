@@ -1,8 +1,10 @@
+import contextlib
 import os
-import selectors
+import queue
 import signal
-import subprocess
+import subprocess  # nosec B404
 import sys
+import threading
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
@@ -15,7 +17,10 @@ MANAGE_SERVICES = {
 
 
 class Command(BaseCommand):
-    help = "Starts Django development server, Huey task worker, and MCP server concurrently."
+    help = (
+        "Starts Django development server, Huey task worker, "
+        "and MCP server concurrently."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -33,7 +38,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--mcp-path",
             default=None,
-            help="Override path to the MCP server script (default: <BASE_DIR>/mcp/server.py)",
+            help=(
+                "Override path to the MCP server script "
+                "(default: <BASE_DIR>/mcp/server.py)"
+            ),
         )
 
     def handle(self, *args, **options):
@@ -59,58 +67,75 @@ class Command(BaseCommand):
             raise CommandError("Nothing to start, every service was skipped.")
 
         for required in (manage_py,):
-            if "django" not in skip or "huey" not in skip:
-                if not os.path.isfile(required):
-                    raise CommandError(f"manage.py not found at {required}")
+            if ("django" not in skip or "huey" not in skip) and not os.path.isfile(
+                required
+            ):
+                raise CommandError(f"manage.py not found at {required}")
         if "mcp" not in skip and not os.path.isfile(mcp_path):
             raise CommandError(f"MCP server script not found at {mcp_path}")
 
         self.stdout.write(self.style.SUCCESS("Starting InvenIQ Dev Environment..."))
 
         processes = []
-        sel = selectors.DefaultSelector()
+        out_queue = queue.Queue()
 
         # popen_kwargs spawns each child in its own process group (POSIX) so we
         # can signal the whole subtree it spawns, not just the direct child.
-        popen_kwargs = dict(
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
+        popen_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 1,
+        }
         if os.name == "posix":
             popen_kwargs["start_new_session"] = True
 
         try:
             for name, cmd in specs:
                 try:
-                    proc = subprocess.Popen(cmd, **popen_kwargs)
+                    proc = subprocess.Popen(cmd, **popen_kwargs)  # nosec B603
                 except FileNotFoundError as exc:
-                    raise CommandError(f"Failed to start {name}: {exc}")
+                    raise CommandError(f"Failed to start {name}: {exc}") from exc
                 processes.append([name, proc])
                 if proc.stdout:
-                    os.set_blocking(proc.stdout.fileno(), False)
-                    sel.register(proc.stdout, selectors.EVENT_READ, (name, proc))
+                    t = threading.Thread(
+                        target=self._reader_thread,
+                        args=(name, proc, out_queue),
+                        daemon=True,
+                    )
+                    t.start()
 
             self.stdout.write(
                 self.style.SUCCESS(
-                    "All services started! Logs are multiplexed below. Press Ctrl+C to stop.\n"
+                    "All services started! Logs are multiplexed below. "
+                    "Press Ctrl+C to stop.\n"
                 )
             )
 
-            self._run_loop(sel, processes)
+            self._run_loop(out_queue, processes)
 
         except KeyboardInterrupt:
             self.stdout.write(self.style.WARNING("\nStopping all services..."))
         finally:
-            sel.close()
             self._shutdown(processes)
             self.stdout.write(self.style.SUCCESS("All services stopped successfully."))
 
-    def _run_loop(self, sel, processes):
+    def _reader_thread(self, name, proc, out_queue):
+        with contextlib.suppress(Exception):
+            for line in iter(proc.stdout.readline, ""):
+                if line:
+                    out_queue.put((name, line))
+        with contextlib.suppress(Exception):
+            proc.stdout.close()
+
+    def _run_loop(self, out_queue, processes):
         while True:
             for name, proc in processes:
                 if proc.poll() is not None:
+                    while not out_queue.empty():
+                        with contextlib.suppress(queue.Empty):
+                            q_name, line = out_queue.get_nowait()
+                            self._write_line(q_name, line)
                     self.stdout.write(
                         self.style.ERROR(
                             f"\n{name} exited unexpectedly with code {proc.returncode}"
@@ -118,21 +143,11 @@ class Command(BaseCommand):
                     )
                     raise KeyboardInterrupt
 
-            events = sel.select(timeout=0.1)
-            for key, _mask in events:
-                name, proc = key.data
-                try:
-                    line = key.fileobj.readline()
-                except (ValueError, OSError):
-                    # stream closed underneath us
-                    sel.unregister(key.fileobj)
-                    continue
-
-                if line:
-                    self._write_line(name, line)
-                elif proc.poll() is not None:
-                    # process is gone and stream is drained, stop polling it
-                    sel.unregister(key.fileobj)
+            try:
+                name, line = out_queue.get(timeout=0.1)
+                self._write_line(name, line)
+            except queue.Empty:
+                continue
 
     def _write_line(self, name, line):
         if name == "Django":
@@ -153,12 +168,10 @@ class Command(BaseCommand):
                     proc, signal.SIGINT if os.name == "posix" else signal.SIGTERM
                 )
 
-        for name, proc in processes:
+        for _, proc in processes:
             if proc.poll() is None:
-                try:
+                with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
 
         # Phase 2: force-kill anything still alive
         for name, proc in processes:

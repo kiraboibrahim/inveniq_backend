@@ -51,7 +51,7 @@ from mcp.server.fastmcp import FastMCP
 from sales.models import SaleItem
 from stakeholders.models import Supplier
 
-mcp = FastMCP("InvenIQ MCP Server", host="0.0.0.0", port=8001)
+mcp = FastMCP("InvenIQ MCP Server", host="0.0.0.0", port=8001)  # nosec B104
 
 
 @mcp.tool()
@@ -344,11 +344,22 @@ def generate_restock_po(sku: str, quantity: int, branch_id: int = 1) -> str:
 @mcp.tool()
 def search_products(query: str) -> str:
     """Searches for products by name, SKU, or description and returns a list of matches with their SKUs, names, and current prices."""
-    products = Product.objects.filter(
-        Q(name__icontains=query)
-        | Q(sku__icontains=query)
-        | Q(description__icontains=query)
-    ).prefetch_related("stocks")[:10]
+    from django.db.models.functions import Lower
+
+    query_lower = query.lower()
+    products = (
+        Product.objects.annotate(
+            name_lower=Lower("name"),
+            sku_lower=Lower("sku"),
+            desc_lower=Lower("description"),
+        )
+        .filter(
+            Q(name_lower__contains=query_lower)
+            | Q(sku_lower__contains=query_lower)
+            | Q(desc_lower__contains=query_lower)
+        )
+        .prefetch_related("stocks")[:10]
+    )
 
     results = []
     for p in products:

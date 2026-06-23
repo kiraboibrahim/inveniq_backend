@@ -95,6 +95,35 @@ services:
     networks:
       - inveniq_backend
 
+  # Model Context Protocol (MCP) Server
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python mcp/server.py
+    volumes:
+      - .:/app
+      - /app/.venv
+      - /app/htmlcov
+      - /app/.pytest_cache
+      - /app/.coverage_data
+      - static_volume:/app/staticfiles
+      - data_volume:/app/data
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/db.sqlite3}
+      - DEBUG=${DEBUG:-False}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - inveniq_backend
+    restart: unless-stopped
+
   # Test Service
   test:
     profiles:

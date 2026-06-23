@@ -46,9 +46,13 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
 ]
 
+SITE_ID = 1
+
 THIRD_PARTY_APPS = [
+    "channels",
     "corsheaders",
     "rest_framework",
     "rest_framework.authtoken",
@@ -61,9 +65,21 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "accounts",
+    "inventory",
+    "common",
+    "stakeholders",
+    "alerts",
+    "sales",
+    "notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -82,7 +98,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -113,7 +129,7 @@ else:
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator", # noqa: E501
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",  # noqa: E501
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -176,6 +192,7 @@ if not DEBUG:
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "dj_rest_auth.jwt_auth.JWTCookieAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
     "DEFAULT_VERSION": "v1",
@@ -186,6 +203,7 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
+    "TOKEN_OBTAIN_SERIALIZER": "accounts.serializers.CustomTokenObtainPairSerializer",
 }
 
 REST_AUTH = {
@@ -195,6 +213,7 @@ REST_AUTH = {
     "JWT_AUTH_HTTPONLY": False,
     "LOGIN_SERIALIZER": "accounts.serializers.LoginSerializer",
     "USER_DETAILS_SERIALIZER": "accounts.serializers.UserDetailsSerializer",
+    "JWT_TOKEN_CLAIMS_SERIALIZER": "accounts.serializers.CustomTokenObtainPairSerializer",
     "JWT_AUTH_SAMESITE": config("JWT_AUTH_SAMESITE", default="Lax"),
     "JWT_AUTH_SECURE": config("JWT_AUTH_SECURE", default=False, cast=bool),
 }
@@ -203,6 +222,7 @@ REST_AUTH = {
 HUEY = {
     "huey_class": "huey.SqliteHuey",
     "name": "inveniq_backend_tasks",
+    "immediate": IS_TESTING,
     "results": True,  # Store return values of tasks.
     "store_none": False,  # If a task returns None, do not save to results.
     "utc": True,  # Use UTC for all times internally.

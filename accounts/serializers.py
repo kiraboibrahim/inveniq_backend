@@ -6,6 +6,21 @@ from rest_framework import serializers
 User = get_user_model()
 
 
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Add custom claims
+        token["role"] = user.role
+        token["email"] = user.email
+        token["name"] = user.display_name
+        return token
+
+
 class LoginSerializer(DJRestAuthLoginSerializer):
     email = serializers.EmailField(
         required=True,
@@ -38,7 +53,20 @@ class UserDetailsSerializer(serializers.ModelSerializer):
     Serializer for the user detail view (e.g., /api/v1/auth/user/).
     """
 
+    name = serializers.CharField(source="display_name", read_only=True)
+
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name")
-        read_only_fields = ("id", "email")
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "avatar",
+            "bio",
+            "role",
+            "display_name",
+            "name",
+        )
+        read_only_fields = ("id", "email", "role", "display_name", "name")

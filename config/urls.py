@@ -17,14 +17,15 @@ Including another URLconf
 
 from django.contrib import admin
 from django.http import HttpResponse
-from django.urls import path
-from rest_framework import permissions
-from drf_yasg.views import get_schema_view
+from django.urls import include, path
 from drf_yasg import openapi
-from django.urls import include
+from drf_yasg.views import get_schema_view
+from rest_framework import permissions
+
 
 def health_check(request):
     return HttpResponse("OK")
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -33,7 +34,7 @@ urlpatterns = [
 schema_view = get_schema_view(
     openapi.Info(
         title="InvenIQ Backend API",
-        default_version='v1',
+        default_version="v1",
         description="A Django project built with modern best practices",
     ),
     public=True,
@@ -42,7 +43,21 @@ schema_view = get_schema_view(
 
 urlpatterns += [
     path("api/auth/", include("dj_rest_auth.urls")),
-    path("api/swagger<format>/", schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path("api/swagger/", schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path("api/redoc/", schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path("api/inventory/", include("inventory.urls")),
+    path("api/stakeholders/", include("stakeholders.urls")),
+    path("api/alerts/", include("alerts.urls")),
+    path("api/sales/", include("sales.urls")),
+    path(
+        "api/swagger<format>/",
+        schema_view.without_ui(cache_timeout=0),
+        name="schema-json",
+    ),
+    path(
+        "api/swagger/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui",
+    ),
+    path(
+        "api/redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"
+    ),
 ]

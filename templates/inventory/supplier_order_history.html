@@ -1,0 +1,419 @@
+{% load l10n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Purchase Order History – {{ supplier.name }}</title>
+    <style>
+        /* ── WeasyPrint page setup ─────────────────────────────────────
+           @page drives the physical page; margins here mean the content
+           area is exactly (210mm - 14mm - 14mm) = 182mm wide.
+           Do NOT also set a fixed width on .page — that causes overflow. */
+        @page {
+            size: A4 portrait;
+            margin: 14mm 14mm 16mm 14mm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 10.5px;
+            color: #1a1a2e;
+            background: #ffffff;
+            line-height: 1.45;
+        }
+
+        /* .page fills the content area set by @page */
+        .page {
+            width: 100%;
+        }
+
+        /* ── Header ───────────────────────────────────────────────── */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 12px;
+            border-bottom: 2.5px solid #4f46e5;
+            margin-bottom: 20px;
+        }
+
+        .brand-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #4f46e5;
+            letter-spacing: -0.4px;
+        }
+
+        .brand-tagline {
+            font-size: 9.5px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        .doc-meta {
+            text-align: right;
+        }
+
+        .doc-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .doc-subtitle {
+            font-size: 9.5px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        /* ── Info cards ───────────────────────────────────────────── */
+        .info-grid {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .info-card {
+            flex: 1;
+            background: #f8f9ff;
+            border: 1px solid #e5e7eb;
+            border-radius: 7px;
+            padding: 10px 12px;
+        }
+
+        .info-card-title {
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #6b7280;
+            margin-bottom: 7px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 3px;
+        }
+
+        .info-label {
+            color: #6b7280;
+            font-size: 9.5px;
+            white-space: nowrap;
+        }
+
+        .info-value {
+            font-weight: 600;
+            color: #111827;
+            font-size: 9.5px;
+            text-align: right;
+            word-break: break-all;
+        }
+
+        /* ── Stats row ────────────────────────────────────────────── */
+        .stats-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            flex: 1;
+            text-align: center;
+            background: #4f46e5;
+            border-radius: 7px;
+            padding: 9px 6px;
+            color: white;
+        }
+
+        .stat-box.green {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+        }
+        .stat-box.green .stat-value,
+        .stat-box.green .stat-label { color: #166534; }
+
+        .stat-box.amber {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+        }
+        .stat-box.amber .stat-value,
+        .stat-box.amber .stat-label { color: #92400e; }
+
+        .stat-box.dark { background: #1e1b4b; }
+
+        .stat-value {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            word-break: break-all;
+        }
+
+        .stat-label {
+            font-size: 8px;
+            font-weight: 600;
+            opacity: 0.85;
+            margin-top: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ── Section title ────────────────────────────────────────── */
+        .section-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        /* ── Orders table ─────────────────────────────────────────── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;   /* critical: honour explicit col widths */
+            margin-bottom: 20px;
+        }
+
+        col.c-order  { width: 10%; }
+        col.c-branch { width: 14%; }
+        col.c-date   { width: 11%; }
+        col.c-status { width: 10%; }
+        col.c-items  { width: 38%; }
+        col.c-total  { width: 17%; }
+
+        thead { background: #4f46e5; color: white; }
+
+        thead th {
+            padding: 7px 8px;
+            text-align: left;
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            overflow: hidden;
+        }
+
+        thead th:last-child { text-align: right; }
+
+        tbody tr { border-bottom: 1px solid #f3f4f6; }
+        tbody tr:nth-child(even) { background: #fafafa; }
+
+        tbody td {
+            padding: 7px 8px;
+            vertical-align: top;
+            font-size: 9.5px;
+            color: #374151;
+            overflow: hidden;
+            word-wrap: break-word;
+        }
+
+        tbody td:last-child { text-align: right; }
+
+        .po-id {
+            font-weight: 700;
+            color: #4f46e5;
+            font-size: 9.5px;
+        }
+
+        /* ── Status badges ────────────────────────────────────────── */
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 999px;
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: capitalize;
+        }
+
+        .badge-draft    { background:#f3f4f6; color:#6b7280; border:1px solid #d1d5db; }
+        .badge-sent     { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+        .badge-received { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+
+        /* ── Items list ───────────────────────────────────────────── */
+        .items-list { font-size: 8.5px; color: #6b7280; }
+        .items-list span { display: block; line-height: 1.55; }
+
+        /* ── Grand total row ──────────────────────────────────────── */
+        .total-row { background: #4f46e5 !important; }
+        .total-row td {
+            color: white !important;
+            font-weight: 700;
+            font-size: 10.5px;
+            padding: 8px;
+        }
+
+        /* ── Footer ───────────────────────────────────────────────── */
+        .footer {
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-brand, .footer-page {
+            font-size: 8.5px;
+            color: #9ca3af;
+        }
+
+        .footer-brand strong { color: #4f46e5; }
+    </style>
+</head>
+<body>
+<div class="page">
+
+    <!-- Header -->
+    <div class="header">
+        <div>
+            <div class="brand-name">InvenIQ</div>
+            <div class="brand-tagline">Inventory Management System</div>
+        </div>
+        <div class="doc-meta">
+            <div class="doc-title">Purchase Order History</div>
+            <div class="doc-subtitle">Generated: {{ generated_at }}</div>
+        </div>
+    </div>
+
+    <!-- Info cards -->
+    <div class="info-grid">
+        <div class="info-card">
+            <div class="info-card-title">Supplier Details</div>
+            <div class="info-row">
+                <span class="info-label">Company</span>
+                <span class="info-value">{{ supplier.name }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Contact</span>
+                <span class="info-value">{{ supplier.contact_person }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Email</span>
+                <span class="info-value">{{ supplier.email }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Phone</span>
+                <span class="info-value">{{ supplier.phone }}</span>
+            </div>
+        </div>
+
+        <div class="info-card">
+            <div class="info-card-title">Report Summary</div>
+            <div class="info-row">
+                <span class="info-label">Period covered</span>
+                <span class="info-value">All time</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Total orders</span>
+                <span class="info-value">{{ orders|length }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Fulfillment rating</span>
+                <span class="info-value">{{ supplier.fulfillment_rating }}%</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Status</span>
+                <span class="info-value">{{ supplier.status|capfirst }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI stats -->
+    <div class="stats-row">
+        <div class="stat-box">
+            <div class="stat-value">{{ total_orders }}</div>
+            <div class="stat-label">Total Orders</div>
+        </div>
+        <div class="stat-box green">
+            <div class="stat-value">{{ received_count }}</div>
+            <div class="stat-label">Received</div>
+        </div>
+        <div class="stat-box amber">
+            <div class="stat-value">{{ pending_count }}</div>
+            <div class="stat-label">Pending / Draft</div>
+        </div>
+        <div class="stat-box dark">
+            <div class="stat-value">UGX {{ grand_total|floatformat:0 }}</div>
+            <div class="stat-label">Grand Total</div>
+        </div>
+    </div>
+
+    <!-- Orders table -->
+    <div class="section-title">Order Details</div>
+
+    {% if orders %}
+    <table>
+        <colgroup>
+            <col class="c-order">
+            <col class="c-branch">
+            <col class="c-date">
+            <col class="c-status">
+            <col class="c-items">
+            <col class="c-total">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>Order #</th>
+                <th>Branch</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Items</th>
+                <th style="text-align:right">Total (UGX)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><span class="po-id">PO-{{ order.id }}</span></td>
+                <td>{{ order.branch.name }}</td>
+                <td>{{ order.created_at|date:"d M Y" }}</td>
+                <td>
+                    <span class="badge badge-{{ order.status }}">{{ order.status }}</span>
+                </td>
+                <td>
+                    <div class="items-list">
+                        {% for item in order.items.all %}
+                        <span>• {{ item.product.name }} × {{ item.quantity }} @ UGX {{ item.unit_cost|floatformat:0 }}</span>
+                        {% empty %}
+                        <span>No items</span>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td>{{ order.order_total|floatformat:0 }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="5" style="text-align:right; padding-right:12px;">Grand Total</td>
+                <td>UGX {{ grand_total|floatformat:0 }}</td>
+            </tr>
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:#6b7280; font-size:10.5px; text-align:center; padding:24px 0;">
+        No purchase orders found for this supplier.
+    </p>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="footer-brand">
+            Powered by <strong>InvenIQ</strong> · Inventory Management System
+        </div>
+        <div class="footer-page">
+            Confidential — for internal use only
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

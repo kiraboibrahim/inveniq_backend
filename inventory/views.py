@@ -50,11 +50,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
-        queryset = Product.objects.all().prefetch_related("stocks")
-        branch_id = self.request.query_params.get("branch")
-        if branch_id and branch_id != "all":
-            queryset = queryset.filter(stocks__branch_id=branch_id).distinct()
-        return queryset
+        return Product.objects.all().prefetch_related("stocks")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["branch"] = self.request.query_params.get("branch")
+        return context
 
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser])
     def import_excel(self, request):
@@ -69,15 +70,10 @@ class ProductViewSet(viewsets.ModelViewSet):
 
             file_bytes = file.read()
             branch_id = request.data.get("branch_id")
-            process_excel_import(file_bytes, branch_id)
+            process_excel_import.call_local(file_bytes, branch_id)
             return Response(
-                {
-                    "message": (
-                        "Excel import started in the background. "
-                        "Products will appear shortly."
-                    )
-                },
-                status=status.HTTP_202_ACCEPTED,
+                {"message": "Excel import completed successfully."},
+                status=status.HTTP_200_OK,
             )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

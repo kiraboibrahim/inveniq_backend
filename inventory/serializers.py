@@ -91,6 +91,12 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def get_stockQty(self, obj):
+        branch = self.context.get("branch")
+        if branch and branch != "all":
+            for s in obj.stocks.all():
+                if str(s.branch_id) == str(branch):
+                    return s.quantity
+            return 0
         return sum(stock.quantity for stock in obj.stocks.all())
 
     def get_status(self, obj):

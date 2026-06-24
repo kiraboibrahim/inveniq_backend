@@ -57,7 +57,7 @@ def handle_stock_alert_check(sender, instance, **kwargs):
                 branch=branch,
                 is_resolved=False,
                 title="Low Stock Warning",
-                description__icontains=product.name,
+                description__startswith=f"{product.name} at {branch.name} is low:",
             ).update(is_resolved=True)
         elif qty <= threshold:
             # Create/Get Low Stock Warning alert
@@ -72,15 +72,23 @@ def handle_stock_alert_check(sender, instance, **kwargs):
                 branch=branch,
                 is_resolved=False,
                 title="Out of Stock",
-                description__icontains=product.name,
+                description=f"{product.name} is out of stock at {branch.name}.",
             ).update(is_resolved=True)
         else:
-            # Resolve both Out of Stock and Low Stock Warning alerts when stock is replenished
+            # Resolve both Out of Stock and Low Stock Warning alerts
+            # when stock is replenished.
             Alert.objects.filter(
                 branch=branch,
                 is_resolved=False,
-                title__in=["Out of Stock", "Low Stock Warning"],
-                description__icontains=product.name,
+                title="Out of Stock",
+                description=f"{product.name} is out of stock at {branch.name}.",
+            ).update(is_resolved=True)
+
+            Alert.objects.filter(
+                branch=branch,
+                is_resolved=False,
+                title="Low Stock Warning",
+                description__startswith=f"{product.name} at {branch.name} is low:",
             ).update(is_resolved=True)
     except Exception as e:
         logger.error(

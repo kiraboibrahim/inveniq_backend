@@ -14,23 +14,29 @@ logger = logging.getLogger(__name__)
 def track_po_status_before_save(sender, instance, **kwargs):
     if instance.id:
         try:
-            instance._was_received = (
-                PurchaseOrder.objects.get(pk=instance.id).status == "received"
-            )
+            original = PurchaseOrder.objects.get(pk=instance.id)
+            instance._was_received = original.status == "received"
+            instance._was_sent = original.status == "sent"
         except PurchaseOrder.DoesNotExist:
             instance._was_received = False
+            instance._was_sent = False
     else:
         instance._was_received = False
+        instance._was_sent = False
 
 
 @receiver(post_save, sender=PurchaseOrder)
-def handle_po_received_signal(sender, instance, created, **kwargs):
-    from .tasks import send_supplier_po_received_email
+def handle_po_status_signals(sender, instance, created, **kwargs):
+    from .tasks import send_supplier_po_received_email, send_supplier_po_sent_email
 
     if instance.status == "received":
         was_received = getattr(instance, "_was_received", False)
         if not was_received and instance.supplier.email:
             send_supplier_po_received_email.delay(instance.id)
+    elif instance.status == "sent":
+        was_sent = getattr(instance, "_was_sent", False)
+        if not was_sent and instance.supplier.email:
+            send_supplier_po_sent_email.delay(instance.id)
 
 
 @receiver(post_save, sender=Stock)

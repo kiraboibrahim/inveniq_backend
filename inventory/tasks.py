@@ -212,7 +212,7 @@ def notify_managers_via_email(message: str):
         Q(role__in=["admin", "manager"]) | Q(is_superuser=True)
     ).exclude(email="")
     for mgr in managers:
-        send_manager_email_async.delay(mgr.email, message)
+        send_manager_email_async(mgr.email, message)
 
 
 @db_periodic_task(crontab(minute="*"))

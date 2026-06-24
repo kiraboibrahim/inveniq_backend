@@ -173,14 +173,12 @@ class TestSuperuserNotifications:
 
         sent_emails = []
 
-        def mock_delay(email, message):
+        def mock_send(email, message):
             sent_emails.append(email)
 
         from inventory import tasks
 
-        monkeypatch.setattr(
-            tasks.send_manager_email_async, "delay", mock_delay, raising=False
-        )
+        monkeypatch.setattr(tasks, "send_manager_email_async", mock_send)
 
         tasks.notify_managers_via_email("Test Message")
 

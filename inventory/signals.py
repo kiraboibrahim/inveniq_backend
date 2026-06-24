@@ -32,11 +32,11 @@ def handle_po_status_signals(sender, instance, created, **kwargs):
     if instance.status == "received":
         was_received = getattr(instance, "_was_received", False)
         if not was_received and instance.supplier.email:
-            send_supplier_po_received_email.delay(instance.id)
+            send_supplier_po_received_email(instance.id)
     elif instance.status == "sent":
         was_sent = getattr(instance, "_was_sent", False)
         if not was_sent and instance.supplier.email:
-            send_supplier_po_sent_email.delay(instance.id)
+            send_supplier_po_sent_email(instance.id)
 
 
 @receiver(post_save, sender=Stock)

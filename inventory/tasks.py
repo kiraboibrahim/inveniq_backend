@@ -205,9 +205,12 @@ def send_manager_email_async(email: str, message: str):
 
 def notify_managers_via_email(message: str):
     from django.contrib.auth import get_user_model
+    from django.db.models import Q
 
     User = get_user_model()
-    managers = User.objects.filter(role__in=["admin", "manager"]).exclude(email="")
+    managers = User.objects.filter(
+        Q(role__in=["admin", "manager"]) | Q(is_superuser=True)
+    ).exclude(email="")
     for mgr in managers:
         send_manager_email_async.delay(mgr.email, message)
 

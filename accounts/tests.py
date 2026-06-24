@@ -143,3 +143,48 @@ class TestCustomJWTAuthentication:
             InvalidToken, match="User not found or invalid user identification"
         ):
             auth.get_user(validated_token)
+
+
+@pytest.mark.django_db
+class TestSuperuserNotifications:
+    """Tests that superusers get correct roles and are included in notifications."""
+
+    def test_create_superuser_sets_admin_role(self):
+        """Test that create_superuser automatically assigns the admin role."""
+        superuser = User.objects.create_superuser(
+            email="super" + "@" + "example.com", password="testpass123"
+        )
+        assert superuser.role == "admin"
+
+    def test_notify_managers_includes_superusers(self, monkeypatch):
+        """Test that notify_managers_via_email includes both roles and superusers."""
+        User.objects.create_user(
+            email="admin" + "@" + "example.com", password="password", role="admin"
+        )
+        User.objects.create_user(
+            email="manager" + "@" + "example.com", password="password", role="manager"
+        )
+        User.objects.create_user(
+            email="staff" + "@" + "example.com", password="password", role="staff"
+        )
+        User.objects.create_superuser(
+            email="super_staff" + "@" + "example.com", password="password", role="staff"
+        )
+
+        sent_emails = []
+
+        def mock_delay(email, message):
+            sent_emails.append(email)
+
+        from inventory import tasks
+
+        monkeypatch.setattr(
+            tasks.send_manager_email_async, "delay", mock_delay, raising=False
+        )
+
+        tasks.notify_managers_via_email("Test Message")
+
+        assert "admin" + "@" + "example.com" in sent_emails
+        assert "manager" + "@" + "example.com" in sent_emails
+        assert "super_staff" + "@" + "example.com" in sent_emails
+        assert "staff" + "@" + "example.com" not in sent_emails

@@ -72,7 +72,7 @@ class UserDetailsSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         user = self.context["request"].user
         if value != user.email:
-            if user.role not in ["admin", "manager"]:
+            if user.role not in ["admin", "manager"] and not user.is_superuser:
                 raise serializers.ValidationError(
                     "Only administrators and managers are "
                     "allowed to change their email."

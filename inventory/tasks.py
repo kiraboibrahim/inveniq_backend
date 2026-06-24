@@ -22,19 +22,63 @@ def create_alert_and_notify(
     title: str, description: str, branch, severity: str, send_sms: bool = False
 ):
     """Central helper to create Alert, broadcast WebSocket notification, and send SMS if requested."""
-    alert, created = Alert.objects.get_or_create(
-        title=title,
-        branch=branch,
-        defaults={
-            "description": description,
-            "severity": severity,
-            "is_resolved": False,
-        },
-    )
-    if created:
-        broadcast_notification(description)
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    existing_alert = None
+
+    # Try to find if there's an existing unresolved alert that matches this product/title/branch.
+    if title in ["Out of Stock", "Low Stock Warning", "Product Expiring Soon"]:
+        # The product name is always the first part before " is out of stock" or " at "
+        parts = description.split(" at ")
+        if not parts or len(parts) < 2:
+            parts = description.split(" is out of stock")
+
+        if parts and len(parts) > 0:
+            product_prefix = parts[0].strip()
+            existing_alert = Alert.objects.filter(
+                title=title,
+                branch=branch,
+                is_resolved=False,
+                description__startswith=product_prefix,
+            ).first()
+
+    if not existing_alert:
+        existing_alert = Alert.objects.filter(
+            title=title, branch=branch, description=description, is_resolved=False
+        ).first()
+
+    if existing_alert:
+        created = False
+        if (
+            existing_alert.description != description
+            or existing_alert.severity != severity
+        ):
+            existing_alert.description = description
+            existing_alert.severity = severity
+            existing_alert.save(update_fields=["description", "severity", "updated_at"])
+            try:
+                broadcast_notification(description)
+            except Exception as e:
+                logger.error(f"Error broadcasting WebSocket notification: {e}")
+        alert = existing_alert
+    else:
+        alert = Alert.objects.create(
+            title=title,
+            description=description,
+            branch=branch,
+            severity=severity,
+            is_resolved=False,
+        )
+        created = True
+        try:
+            broadcast_notification(description)
+        except Exception as e:
+            logger.error(f"Error broadcasting WebSocket notification: {e}")
         if send_sms:
             notify_managers_via_sms(f"{severity.upper()}: {description}")
+
     return alert, created
 
 

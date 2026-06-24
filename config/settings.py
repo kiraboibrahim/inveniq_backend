@@ -191,8 +191,8 @@ if not DEBUG:
 # REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "dj_rest_auth.jwt_auth.JWTCookieAuthentication",
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "accounts.authentication.CustomJWTCookieAuthentication",
+        "accounts.authentication.CustomJWTAuthentication",
     ),
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.URLPathVersioning",
     "DEFAULT_VERSION": "v1",
@@ -213,7 +213,9 @@ REST_AUTH = {
     "JWT_AUTH_HTTPONLY": False,
     "LOGIN_SERIALIZER": "accounts.serializers.LoginSerializer",
     "USER_DETAILS_SERIALIZER": "accounts.serializers.UserDetailsSerializer",
-    "JWT_TOKEN_CLAIMS_SERIALIZER": "accounts.serializers.CustomTokenObtainPairSerializer",
+    "JWT_TOKEN_CLAIMS_SERIALIZER": (
+        "accounts.serializers.CustomTokenObtainPairSerializer"
+    ),
     "JWT_AUTH_SAMESITE": config("JWT_AUTH_SAMESITE", default="Lax"),
     "JWT_AUTH_SECURE": config("JWT_AUTH_SECURE", default=False, cast=bool),
 }

@@ -112,3 +112,34 @@ class TestUserDetailsSerializer:
         assert not serializer.is_valid()
         assert "email" in serializer.errors
         assert "already exists" in str(serializer.errors["email"])
+
+
+@pytest.mark.django_db
+class TestCustomJWTAuthentication:
+    """Tests for custom JWT authentication classes handling malformed or invalid IDs."""
+
+    def test_custom_jwt_authentication_invalid_user_id(self):
+        """Test that a non-integer user_id raises InvalidToken instead of ValueError."""
+        from rest_framework_simplejwt.exceptions import InvalidToken
+
+        from accounts.authentication import CustomJWTAuthentication
+
+        auth = CustomJWTAuthentication()
+        validated_token = {"user_id": "ygODxO3"}
+        with pytest.raises(
+            InvalidToken, match="User not found or invalid user identification"
+        ):
+            auth.get_user(validated_token)
+
+    def test_custom_jwt_cookie_authentication_invalid_user_id(self):
+        """Test that a non-integer user_id in cookie auth raises InvalidToken."""
+        from rest_framework_simplejwt.exceptions import InvalidToken
+
+        from accounts.authentication import CustomJWTCookieAuthentication
+
+        auth = CustomJWTCookieAuthentication()
+        validated_token = {"user_id": "ygODxO3"}
+        with pytest.raises(
+            InvalidToken, match="User not found or invalid user identification"
+        ):
+            auth.get_user(validated_token)

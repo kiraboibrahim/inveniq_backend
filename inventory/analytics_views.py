@@ -56,7 +56,7 @@ class StockDepletionForecastView(APIView):
             avg_daily_sales = stored_predictions[0]["predicted_demand"] or 0
             projection = [
                 {
-                    "day": f"Day {i+1}",
+                    "day": f"Day {i + 1}",
                     "predicted": p["predicted_stock"],
                     "confidence_lower": p["confidence_lower"],
                     "confidence_upper": p["confidence_upper"],
@@ -93,7 +93,7 @@ class StockDepletionForecastView(APIView):
 
                 projection.append(
                     {
-                        "day": f"Day {7-i+1}",
+                        "day": f"Day {7 - i + 1}",
                         "actual": temp_stock,
                         "predicted": temp_stock,
                     }
@@ -103,7 +103,7 @@ class StockDepletionForecastView(APIView):
             for i in range(1, 8):
                 projection.append(
                     {
-                        "day": f"Day {7+i}",
+                        "day": f"Day {7 + i}",
                         "predicted": max(0, temp_stock - (avg_daily_sales * i)),
                     }
                 )

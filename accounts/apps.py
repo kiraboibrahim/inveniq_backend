@@ -1,6 +1,7 @@
 """
 App configuration for accounts app.
 """
+
 from django.apps import AppConfig
 
 

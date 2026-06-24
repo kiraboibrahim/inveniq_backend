@@ -22,6 +22,11 @@ class Sale(models.Model):
         default="cash",
         choices=[("cash", "Cash"), ("credit", "Credit")],
     )
+    due_date = models.DateField(_("due date"), null=True, blank=True)
+    paid_amount = models.DecimalField(
+        _("paid amount"), max_digits=15, decimal_places=2, default=0
+    )
+    is_paid = models.BooleanField(_("is paid"), default=False)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:

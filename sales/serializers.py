@@ -26,9 +26,21 @@ class SaleSerializer(serializers.ModelSerializer):
             "customer_name",
             "total_amount",
             "payment_method",
+            "due_date",
+            "paid_amount",
+            "is_paid",
             "timestamp",
             "items",
         ]
+
+    def validate(self, attrs):
+        payment_method = attrs.get("payment_method", "cash")
+        due_date = attrs.get("due_date")
+        if payment_method == "credit" and not due_date:
+            raise serializers.ValidationError(
+                {"due_date": "Due date is required for credit sales."}
+            )
+        return attrs
 
     def create(self, validated_data):
         import datetime
@@ -40,6 +52,14 @@ class SaleSerializer(serializers.ModelSerializer):
         customer = validated_data.get("customer")
         payment_method = validated_data.get("payment_method", "cash")
         total_amount = validated_data.get("total_amount", 0)
+
+        # Set default values for is_paid and paid_amount
+        if payment_method == "cash":
+            validated_data["is_paid"] = True
+            validated_data["paid_amount"] = total_amount
+        else:
+            validated_data["is_paid"] = False
+            validated_data["paid_amount"] = 0
 
         # 1. Pre-validate stock availability for all items to guarantee transaction atomicity
         for item_data in items_data:

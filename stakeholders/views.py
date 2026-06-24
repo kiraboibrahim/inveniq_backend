@@ -78,6 +78,8 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        from sales.models import Sale
+
         with transaction.atomic():
             # Use F() expressions to avoid race conditions
             Customer.objects.filter(pk=customer.pk).update(
@@ -91,6 +93,25 @@ class CustomerViewSet(viewsets.ModelViewSet):
                 note=note,
                 recorded_by=request.user if request.user.is_authenticated else None,
             )
+
+            # FIFO allocation of payments to unpaid credit sales
+            unpaid_sales = Sale.objects.filter(
+                customer=customer, payment_method="credit", is_paid=False
+            ).order_by("timestamp")
+
+            remaining_payment = amount
+            for sale in unpaid_sales:
+                if remaining_payment <= Decimal("0"):
+                    break
+                owed = sale.total_amount - sale.paid_amount
+                if remaining_payment >= owed:
+                    remaining_payment -= owed
+                    sale.paid_amount = sale.total_amount
+                    sale.is_paid = True
+                else:
+                    sale.paid_amount += remaining_payment
+                    remaining_payment = Decimal("0")
+                sale.save()
 
         customer.refresh_from_db()
         return Response(

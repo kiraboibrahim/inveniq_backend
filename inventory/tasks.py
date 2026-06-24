@@ -215,6 +215,89 @@ def notify_managers_via_email(message: str):
         send_manager_email_async(mgr.email, message)
 
 
+@db_task()
+def send_customer_debt_reminder_email_async(
+    email: str,
+    contact_person: str,
+    company_name: str,
+    branch_name: str,
+    sale_id: int,
+    sale_date: str,
+    total_amount: str,
+    paid_amount: str,
+    remaining_balance: str,
+    due_date: str,
+):
+    from django.conf import settings
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+
+    context = {
+        "contact_person": contact_person,
+        "company_name": company_name,
+        "branch_name": branch_name,
+        "sale_id": sale_id,
+        "sale_date": sale_date,
+        "total_amount": total_amount,
+        "paid_amount": paid_amount,
+        "remaining_balance": remaining_balance,
+        "due_date": due_date,
+    }
+
+    html_content = render_to_string("emails/debt_reminder.html", context)
+    text_content = (
+        f"Dear {contact_person}, this is a payment reminder for "
+        f"Invoice #{sale_id} at {branch_name}. "
+        f"Remaining balance: UGX {remaining_balance}, due by {due_date}."
+    )
+
+    msg = EmailMultiAlternatives(
+        subject=f"Payment Reminder: Invoice #{sale_id} - {branch_name}",
+        body=text_content,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[email],
+    )
+    msg.attach_alternative(html_content, "text/html")
+    msg.send()
+
+
+@db_periodic_task(crontab(minute="*"))
+def send_due_debt_reminders():
+    """Checks for unpaid credit sales that are due today or overdue.
+
+    Sends reminder emails to customers.
+    """
+    from datetime import date, timedelta
+
+    from sales.models import Sale
+
+    today = date.today()
+    alert_threshold_date = today + timedelta(days=1)
+
+    due_sales = Sale.objects.filter(
+        payment_method="credit",
+        is_paid=False,
+        due_date__lte=alert_threshold_date,
+        customer__isnull=False,
+    ).select_related("customer", "branch")
+
+    for sale in due_sales:
+        if sale.customer.email:
+            remaining_balance = sale.total_amount - sale.paid_amount
+            send_customer_debt_reminder_email_async(
+                email=sale.customer.email,
+                contact_person=sale.customer.contact_person,
+                company_name=sale.customer.company_name,
+                branch_name=sale.branch.name,
+                sale_id=sale.id,
+                sale_date=sale.timestamp.strftime("%Y-%m-%d"),
+                total_amount=f"{sale.total_amount:,.0f}",
+                paid_amount=f"{sale.paid_amount:,.0f}",
+                remaining_balance=f"{remaining_balance:,.0f}",
+                due_date=sale.due_date.strftime("%Y-%m-%d"),
+            )
+
+
 @db_periodic_task(crontab(minute="*"))
 def check_stock_levels():
     stocks = Stock.objects.all().select_related("product", "branch")

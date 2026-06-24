@@ -184,7 +184,7 @@ def notify_managers_via_sms(message: str):
         send_sms_async.delay(mgr.phone_number, message)
 
 
-@db_periodic_task(crontab(minute="*/30"))
+@db_periodic_task(crontab(minute="*"))
 def check_stock_levels():
     stocks = Stock.objects.all().select_related("product", "branch")
     for stock in stocks:

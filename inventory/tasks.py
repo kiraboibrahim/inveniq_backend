@@ -41,8 +41,8 @@ def _find_existing_unresolved_alert(title: str, branch, description: str):
     ).first()
 
 
-def _send_alert_notifications(description: str, severity: str, send_sms: bool):
-    """Safely broadcasts websocket notification and optional SMS notification."""
+def _send_alert_notifications(description: str, severity: str, send_email: bool):
+    """Safely broadcasts websocket notification and optional email notification."""
     import logging
 
     logger = logging.getLogger(__name__)
@@ -52,16 +52,16 @@ def _send_alert_notifications(description: str, severity: str, send_sms: bool):
     except Exception as e:
         logger.error(f"Error broadcasting WebSocket notification: {e}")
 
-    if send_sms:
-        notify_managers_via_sms(f"{severity.upper()}: {description}")
+    if send_email:
+        notify_managers_via_email(f"{severity.upper()}: {description}")
 
 
 def create_alert_and_notify(
-    title: str, description: str, branch, severity: str, send_sms: bool = False
+    title: str, description: str, branch, severity: str, send_email: bool = False
 ):
     """Central helper to create Alert and broadcast notifications.
 
-    Creates Alert, broadcasts WebSocket notification, and sends SMS if requested.
+    Creates Alert, broadcasts WebSocket notification, and sends Email if requested.
     """
     existing_alert = _find_existing_unresolved_alert(title, branch, description)
 
@@ -74,7 +74,7 @@ def create_alert_and_notify(
             existing_alert.description = description
             existing_alert.severity = severity
             existing_alert.save(update_fields=["description", "severity", "updated_at"])
-            _send_alert_notifications(description, severity, send_sms=False)
+            _send_alert_notifications(description, severity, send_email=False)
         alert = existing_alert
     else:
         alert = Alert.objects.create(
@@ -85,7 +85,7 @@ def create_alert_and_notify(
             is_resolved=False,
         )
         created = True
-        _send_alert_notifications(description, severity, send_sms=send_sms)
+        _send_alert_notifications(description, severity, send_email=send_email)
 
     return alert, created
 
@@ -175,21 +175,41 @@ def broadcast_notification(message):
 
 
 @db_task()
-def send_sms_async(phone: str, message: str):
-    from notifications.sms import send_sms
+def send_manager_email_async(email: str, message: str):
+    """Sends an alert notification email to a manager."""
+    from django.conf import settings
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
 
-    send_sms(phone, message)
+    try:
+        context = {
+            "message": message,
+        }
+        html_content = render_to_string("emails/manager_alert.html", context)
+        text_content = strip_tags(html_content)
+
+        subject = "InvenIQ System Alert"
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@inveniq.com")
+        to_email = [email]
+
+        msg = EmailMultiAlternatives(subject, text_content, from_email, to_email)
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error sending manager alert email: {e}")
 
 
-def notify_managers_via_sms(message: str):
+def notify_managers_via_email(message: str):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-    managers = User.objects.filter(role__in=["admin", "manager"]).exclude(
-        phone_number=""
-    )
+    managers = User.objects.filter(role__in=["admin", "manager"]).exclude(email="")
     for mgr in managers:
-        send_sms_async.delay(mgr.phone_number, message)
+        send_manager_email_async.delay(mgr.email, message)
 
 
 @db_periodic_task(crontab(minute="*"))
@@ -316,7 +336,7 @@ def check_expiring_products():
                     description=description,
                     branch=stock.branch,
                     severity="warning",
-                    send_sms=True,
+                    send_email=True,
                 )
                 if created:
                     alerts_created += 1
@@ -584,7 +604,7 @@ def detect_daily_loss_anomalies():
                 description=anomaly["description"],
                 branch=branch,
                 severity=anomaly["severity"],
-                send_sms=(anomaly["severity"] in ["critical", "warning"]),
+                send_email=(anomaly["severity"] in ["critical", "warning"]),
             )
             if created:
                 alerts_created += 1

@@ -18,36 +18,52 @@ from .models import Branch, Category, Product, PurchaseOrder, Stock
 from .models_ai import AiInsight, StockPrediction
 
 
-def create_alert_and_notify(
-    title: str, description: str, branch, severity: str, send_sms: bool = False
-):
-    """Central helper to create Alert, broadcast WebSocket notification, and send SMS if requested."""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    existing_alert = None
-
-    # Try to find if there's an existing unresolved alert that matches this product/title/branch.
+def _find_existing_unresolved_alert(title: str, branch, description: str):
+    """Finds an existing unresolved alert that is similar or identical."""
     if title in ["Out of Stock", "Low Stock Warning", "Product Expiring Soon"]:
-        # The product name is always the first part before " is out of stock" or " at "
         parts = description.split(" at ")
         if not parts or len(parts) < 2:
             parts = description.split(" is out of stock")
 
         if parts and len(parts) > 0:
             product_prefix = parts[0].strip()
-            existing_alert = Alert.objects.filter(
+            existing = Alert.objects.filter(
                 title=title,
                 branch=branch,
                 is_resolved=False,
                 description__startswith=product_prefix,
             ).first()
+            if existing:
+                return existing
 
-    if not existing_alert:
-        existing_alert = Alert.objects.filter(
-            title=title, branch=branch, description=description, is_resolved=False
-        ).first()
+    return Alert.objects.filter(
+        title=title, branch=branch, description=description, is_resolved=False
+    ).first()
+
+
+def _send_alert_notifications(description: str, severity: str, send_sms: bool):
+    """Safely broadcasts websocket notification and optional SMS notification."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        broadcast_notification(description)
+    except Exception as e:
+        logger.error(f"Error broadcasting WebSocket notification: {e}")
+
+    if send_sms:
+        notify_managers_via_sms(f"{severity.upper()}: {description}")
+
+
+def create_alert_and_notify(
+    title: str, description: str, branch, severity: str, send_sms: bool = False
+):
+    """Central helper to create Alert and broadcast notifications.
+
+    Creates Alert, broadcasts WebSocket notification, and sends SMS if requested.
+    """
+    existing_alert = _find_existing_unresolved_alert(title, branch, description)
 
     if existing_alert:
         created = False
@@ -58,10 +74,7 @@ def create_alert_and_notify(
             existing_alert.description = description
             existing_alert.severity = severity
             existing_alert.save(update_fields=["description", "severity", "updated_at"])
-            try:
-                broadcast_notification(description)
-            except Exception as e:
-                logger.error(f"Error broadcasting WebSocket notification: {e}")
+            _send_alert_notifications(description, severity, send_sms=False)
         alert = existing_alert
     else:
         alert = Alert.objects.create(
@@ -72,12 +85,7 @@ def create_alert_and_notify(
             is_resolved=False,
         )
         created = True
-        try:
-            broadcast_notification(description)
-        except Exception as e:
-            logger.error(f"Error broadcasting WebSocket notification: {e}")
-        if send_sms:
-            notify_managers_via_sms(f"{severity.upper()}: {description}")
+        _send_alert_notifications(description, severity, send_sms=send_sms)
 
     return alert, created
 

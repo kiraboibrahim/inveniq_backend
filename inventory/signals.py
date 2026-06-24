@@ -1,13 +1,36 @@
 import logging
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from alerts.models import Alert
 
-from .models import Stock
+from .models import PurchaseOrder, Stock
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(pre_save, sender=PurchaseOrder)
+def track_po_status_before_save(sender, instance, **kwargs):
+    if instance.id:
+        try:
+            instance._was_received = (
+                PurchaseOrder.objects.get(pk=instance.id).status == "received"
+            )
+        except PurchaseOrder.DoesNotExist:
+            instance._was_received = False
+    else:
+        instance._was_received = False
+
+
+@receiver(post_save, sender=PurchaseOrder)
+def handle_po_received_signal(sender, instance, created, **kwargs):
+    from .tasks import send_supplier_po_received_email
+
+    if instance.status == "received":
+        was_received = getattr(instance, "_was_received", False)
+        if not was_received and instance.supplier.email:
+            send_supplier_po_received_email.delay(instance.id)
 
 
 @receiver(post_save, sender=Stock)

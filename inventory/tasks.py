@@ -588,3 +588,59 @@ def detect_daily_loss_anomalies():
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@db_task()
+def send_supplier_po_received_email(po_id: int):
+    """Sends a confirmation email to the supplier once their PO is marked as received."""
+    from django.conf import settings
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
+
+    from inventory.models import PurchaseOrder
+
+    try:
+        po = PurchaseOrder.objects.select_related("supplier", "branch").get(id=po_id)
+        supplier = po.supplier
+        if not supplier.email:
+            return
+
+        # Fetch items
+        items_queryset = po.items.select_related("product")
+        items_list = []
+        for item in items_queryset:
+            items_list.append(
+                {
+                    "sku": item.product.sku,
+                    "name": item.product.name,
+                    "quantity": item.quantity,
+                }
+            )
+
+        # Render HTML template
+        context = {
+            "supplier_name": supplier.name,
+            "po_id": po.id,
+            "branch_name": po.branch.name,
+            "date_received": timezone.now().strftime("%d/%m/%Y %H:%M"),
+            "items": items_list,
+        }
+        html_content = render_to_string("emails/po_received.html", context)
+        text_content = strip_tags(html_content)
+
+        subject = f"Purchase Order Received - PO #{po.id}"
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@inveniq.com")
+        to_email = [supplier.email]
+
+        msg = EmailMultiAlternatives(subject, text_content, from_email, to_email)
+        msg.attach_alternative(html_content, "text/html")
+        msg.send()
+
+    except PurchaseOrder.DoesNotExist:
+        pass
+    except Exception as e:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error sending PO received email to supplier: {e}")
